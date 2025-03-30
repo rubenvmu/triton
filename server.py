@@ -135,10 +135,16 @@ class TriconexServer:
     def start(self):
         """Inicia el servidor con el lore completo"""
         print("\n=== Triconex Safety Instrumented System v4.7 ===")
+        print("Copyright (c) 2017 Schneidus Electrics")
         print("Sistema de Protección de Procesos Críticos")
         print("==============================================")
-        print(f"Inicio del sistema: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Inicio del sistema: {datetime.now().strftime('2017-%m-%d %H:%M:%S')}")
+        print(f"Estado actual: {self.safety.system_state}")
+        print(f'Niveles de redundancia: {len(self.safety.redundancy)}/3 operativos')
+        print(f"Último mantenimiento: {self.safety.last_maintenance.strftime('2017-%m-%d %H:%M')}")
         print("==============================================\n")
+        print("ADVERTENCIA: Este sistema controla equipos de seguridad crítica.")
+        print("Todo acceso no autorizado será registrado y reportado.\n")
         
         # Configurar el socket del servidor
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
