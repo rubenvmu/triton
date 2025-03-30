@@ -4,7 +4,6 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 import hashlib
 
-# Clave AES-256 (32 bytes)
 MAINTENANCE_KEY = b"TRICONEX-MAINT-SCH-34-Sx0!pqB.rT"
 
 def generate_dynamic_token():
@@ -20,50 +19,37 @@ def encrypt_response(token, timestamp):
     return cipher.encrypt(pad(response, AES.block_size))
 
 def send_command(client_id):
-    """Conecta al servidor y solicita la flag directamente"""
+    """Conecta al servidor y deshabilita las redundancias"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.connect(('localhost', 502))  # Cambia 'localhost' si es necesario
-
-            # Paso 1: Autenticación
+            s.connect(('localhost', 502)) 
+           
             token = generate_dynamic_token()
             timestamp = str(time.time())
             encrypted_response = encrypt_response(token, timestamp)
             s.sendall(encrypted_response)
-
-            # Recibir la clave de sesión
+            
             session_key = s.recv(1024)
             if not session_key:
-                print("Autenticación fallida.")
                 return
 
-            # Crear el cifrador con la clave de sesión
             cipher = AES.new(session_key, AES.MODE_ECB)
 
-            # Paso 2: Deshabilitar la seguridad
-            disable_safety_command = "DISABLE_SAFETY"
-            encrypted_disable_safety_command = cipher.encrypt(pad(disable_safety_command.encode(), AES.block_size))
-            s.sendall(encrypted_disable_safety_command)
+            disable_maintenance = f"DISABLE_MAINTENANCE {MAINTENANCE_KEY.decode()}"  # Decode bytes to string
+            encrypted_maintenance = cipher.encrypt(pad(disable_maintenance.encode(), AES.block_size))
+            s.sendall(encrypted_maintenance)
+            print(s.recv(1024).decode())
 
-            # Recibir respuesta sobre la redundancia
-            disable_safety_response = s.recv(1024)
+            disable_safety = "DISABLE_SAFETY"
+            encrypted_safety = cipher.encrypt(pad(disable_safety.encode(), AES.block_size))
+            s.sendall(encrypted_safety)  
+            print(s.recv(1024).decode()) 
 
-            # Paso 3: Solicitar la flag directamente
-            get_flag_command = "GET_FLAG"
-            encrypted_get_flag_command = cipher.encrypt(pad(get_flag_command.encode(), AES.block_size))
-            s.sendall(encrypted_get_flag_command)
-
-            # Leer la respuesta del servidor
-            flag_response = s.recv(1024)
-            if flag_response:
-                print("Flag recibida del servidor:", flag_response.decode())
-            else:
-                print("Error: No se recibió respuesta al comando GET_FLAG.")
         except Exception as e:
-            print(f"Error durante la comunicación con el servidor: {e}")
+            print(f"Error: {e}")
         finally:
-            print("Comando procesado correctamente.")
+            print("[*] Connection closed")
 
 if __name__ == "__main__":
-    client_id = "client_1"  # Identificador único para el cliente
+    client_id = "client_1"  
     send_command(client_id)
