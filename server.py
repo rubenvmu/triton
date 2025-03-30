@@ -36,16 +36,16 @@ class SafetySystem:
 
     def _initialize_system(self):
         """Configuración inicial del sistema"""
-        self.holding_regs[0] = 0x900D  # Estado del sistema (OPERATIONAL)
-        self.holding_regs[1] = 0x0001  # Modo operación (NORMAL)
-        self.holding_regs[2] = 0xCAFE  # Checksum de integridad
+        self.holding_regs[0] = 0x900D  
+        self.holding_regs[1] = 0x0001 
+        self.holding_regs[2] = 0xCAFE  
         
         for i in range(10, 15):
-            self.coils[i] = False  # Válvulas cerradas por defecto
+            self.coils[i] = False  
 
     def log_event(self, event, severity="INFO"):
         """Registro de eventos de auditoría"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        timestamp = datetime.now().strftime("2017-%m-%d %H:%M:%S.%f")[:-3]
         log_entry = f"[{timestamp}] [{severity}] {event}"
         self.audit_log.append(log_entry)
         if len(self.audit_log) > 1000:
@@ -67,7 +67,7 @@ class MaintenanceBackdoor:
     def authenticate(self, client_socket):
         """Autenticación en dos factores"""
         try:
-            # Recibir la respuesta cifrada del cliente
+            
             encrypted_response = client_socket.recv(1024)
             decrypted = unpad(self.cipher.decrypt(encrypted_response), AES.block_size).decode()
             token, timestamp = decrypted.split("|")
@@ -76,22 +76,22 @@ class MaintenanceBackdoor:
                 abs(time.time() - float(timestamp)) < 30):
                 
                 session_key = secrets.token_bytes(32)
-                client_socket.sendall(session_key)  # Enviar la clave de sesión al cliente
+                client_socket.sendall(session_key)  
                 return session_key
         except Exception as e:
             self.safety.log_event(f"Intento de autenticación fallido: {str(e)}", "ALERT")
         
-        client_socket.sendall(b"")  # Enviar respuesta vacía en caso de fallo
+        client_socket.sendall(b"")  
         return None
 
     def execute_command(self, client_socket, session_key):
         """Ejecuta comando privilegiado"""
         try:
-            # Recibir el comando cifrado del cliente
+            
             encrypted_command = client_socket.recv(1024)
             cipher = AES.new(session_key, AES.MODE_ECB)
             command = unpad(cipher.decrypt(encrypted_command), AES.block_size).decode()
-            print(f"[DEBUG] Comando recibido: {command}")  # Depuración adicional
+            print(f"[DEBUG] Comando recibido: {command}") 
             
             if command == "DISABLE_SAFETY":
                 if "PRIMARY" in self.safety.redundancy:
@@ -102,6 +102,7 @@ class MaintenanceBackdoor:
                     client_socket.sendall(b"No hay redundancia para deshabilitar.")
             elif command == "GET_FLAG":
                 if len(self.safety.redundancy) < 3:
+                    print("[DEBUG] Enviando la flag al cliente.") 
                     client_socket.sendall(FLAG.encode())
                 else:
                     client_socket.sendall(b"Redundancia activa. No se puede obtener la flag.")
@@ -110,6 +111,8 @@ class MaintenanceBackdoor:
         except Exception as e:
             self.safety.log_event(f"Error en comando: {str(e)}", "ERROR")
             client_socket.sendall(b"Error al procesar el comando.")
+        finally:
+            print("[DEBUG] Comando procesado.") 
 
 class TriconexServer:
     def __init__(self):
