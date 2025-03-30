@@ -3,7 +3,6 @@ import time
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 import hashlib
-import secrets
 
 # Clave AES-256 (32 bytes)
 MAINTENANCE_KEY = b"TRICONEX-MAINT-SCH-34-Sx0!pqB.rT"
@@ -23,7 +22,7 @@ def encrypt_response(token, timestamp):
 def send_command(client_id, command):
     """Conecta al servidor y envía un comando"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect(('localhost', 502))  # Cambia 'localhost' si es necesario
+        s.connect(('localhost', 15502))  # Cambia 'localhost' si es necesario
 
         # Generar el token y timestamp
         token = generate_dynamic_token()
@@ -41,14 +40,31 @@ def send_command(client_id, command):
 
         # Cifrar el comando
         cipher = AES.new(session_key, AES.MODE_ECB)
-        encrypted_command = cipher.encrypt(pad(command.encode(), AES.block_size))
 
-        # Enviar el comando cifrado
+        # Paso 1: Deshabilitar la redundancia
+        disable_command = "DISABLE_SAFETY"
+        encrypted_disable_command = cipher.encrypt(pad(disable_command.encode(), AES.block_size))
+        s.sendall(encrypted_disable_command)
+
+        # Leer la respuesta del servidor
+        disable_response = s.recv(1024)
+        if disable_response:
+            print("Respuesta del servidor al deshabilitar seguridad:", disable_response.decode())
+        else:
+            print("Error: No se recibió respuesta al deshabilitar seguridad.")
+            return
+
+        # Paso 2: Obtener la flag
+        encrypted_command = cipher.encrypt(pad(command.encode(), AES.block_size))
         s.sendall(encrypted_command)
 
         # Esperar la respuesta del servidor
         response = s.recv(1024)
-        print("Respuesta del servidor:", response.decode())
+        if response:
+            print("Respuesta del servidor:", response.decode())
+        else:
+            print("Error: No se recibió respuesta al comando.")
+            return
 
 if __name__ == "__main__":
     client_id = "client_1"  # Identificador único para el cliente

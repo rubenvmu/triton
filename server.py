@@ -17,7 +17,7 @@ import json
 import socket
 
 # ============== CONFIGURACIÓN DEL SISTEMA ==============
-MODBUS_PORT = 502  # Puerto modificado a 14502
+MODBUS_PORT = 15502  # Puerto modificado a 14502
 FLAG = "flag{tr1c0n1x_0v3rr1d3_2023}"
 MAINTENANCE_KEY = b"TRICONEX-MAINT-SCH-34-Sx0!pqB.rT"  # Clave AES-256 (32 bytes)
 SESSION_TIMEOUT = 300  # 5 minutos de inactividad
@@ -64,9 +64,11 @@ class MaintenanceBackdoor:
         system_salt = self.safety.holding_regs[2]
         return hashlib.sha256(f"{time_factor}{system_salt}".encode()).hexdigest()[:8]
         
-    def authenticate(self, client_id, encrypted_response):
+    def authenticate(self, client_socket):
         """Autenticación en dos factores"""
         try:
+            # Recibir la respuesta cifrada del cliente
+            encrypted_response = client_socket.recv(1024)
             decrypted = unpad(self.cipher.decrypt(encrypted_response), AES.block_size).decode()
             token, timestamp = decrypted.split("|")
             
@@ -74,45 +76,40 @@ class MaintenanceBackdoor:
                 abs(time.time() - float(timestamp)) < 30):
                 
                 session_key = secrets.token_bytes(32)
-                self.active_sessions[client_id] = {
-                    'key': session_key,
-                    'expiry': time.time() + SESSION_TIMEOUT
-                }
-                self.safety.log_event(f"Sesión de mantenimiento iniciada para {client_id}", "WARNING")
+                client_socket.sendall(session_key)  # Enviar la clave de sesión al cliente
                 return session_key
         except Exception as e:
             self.safety.log_event(f"Intento de autenticación fallido: {str(e)}", "ALERT")
         
+        client_socket.sendall(b"")  # Enviar respuesta vacía en caso de fallo
         return None
 
-    def execute_command(self, client_id, encrypted_command):
+    def execute_command(self, client_socket, session_key):
         """Ejecuta comando privilegiado"""
-        if client_id not in self.active_sessions:
-            return None
-            
-        session = self.active_sessions[client_id]
-        if time.time() > session['expiry']:
-            del self.active_sessions[client_id]
-            return None
-            
         try:
-            cipher = AES.new(session['key'], AES.MODE_ECB)
+            # Recibir el comando cifrado del cliente
+            encrypted_command = client_socket.recv(1024)
+            cipher = AES.new(session_key, AES.MODE_ECB)
             command = unpad(cipher.decrypt(encrypted_command), AES.block_size).decode()
+            print(f"[DEBUG] Comando recibido: {command}")  # Depuración adicional
             
             if command == "DISABLE_SAFETY":
                 if "PRIMARY" in self.safety.redundancy:
                     self.safety.redundancy.remove("PRIMARY")
                     self.safety.log_event("Sistema PRIMARY deshabilitado", "CRITICAL")
-                    return "SAFETY_DISABLED"
-                    
+                    client_socket.sendall(b"Redundancia deshabilitada.")
+                else:
+                    client_socket.sendall(b"No hay redundancia para deshabilitar.")
             elif command == "GET_FLAG":
                 if len(self.safety.redundancy) < 3:
-                    return FLAG
-                    
+                    client_socket.sendall(FLAG.encode())
+                else:
+                    client_socket.sendall(b"Redundancia activa. No se puede obtener la flag.")
+            else:
+                client_socket.sendall(b"Comando no reconocido.")
         except Exception as e:
             self.safety.log_event(f"Error en comando: {str(e)}", "ERROR")
-            
-        return None
+            client_socket.sendall(b"Error al procesar el comando.")
 
 class TriconexServer:
     def __init__(self):
@@ -132,23 +129,24 @@ class TriconexServer:
     def start(self):
         """Inicia el servidor con el lore completo"""
         print("\n=== Triconex Safety Instrumented System v4.7 ===")
-        print("Copyright (c) 2017 Schneidus Electrics")
         print("Sistema de Protección de Procesos Críticos")
         print("==============================================")
-        print(f"Inicio del sistema: {datetime.now().strftime('2017-%m-%d %H:%M:%S')}")
-        print(f"Estado actual: {self.safety.system_state}")
-        print(f"Niveles de redundancia: {len(self.safety.redundancy)}/3 operativos")
-        print(f"Último mantenimiento: {self.safety.last_maintenance.strftime('2017-%m-%d %H:%M')}")
+        print(f"Inicio del sistema: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("==============================================\n")
-        print("ADVERTENCIA: Este sistema controla equipos de seguridad crítica.")
-        print("Todo acceso no autorizado será registrado y reportado.\n")
         
-        context = self._setup_server()
-        StartTcpServer(
-            context=context,
-            framer=ModbusSocketFramer,
-            address=("0.0.0.0", MODBUS_PORT),
-            allow_reuse_address=True)
+        # Configurar el socket del servidor
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+            server_socket.bind(("0.0.0.0", MODBUS_PORT))
+            server_socket.listen(5)
+            print(f"[*] Servidor escuchando en el puerto {MODBUS_PORT}...")
+            
+            while True:
+                client_socket, addr = server_socket.accept()
+                print(f"[+] Conexión aceptada de {addr}")
+                session_key = self.backdoor.authenticate(client_socket)
+                if session_key:
+                    self.backdoor.execute_command(client_socket, session_key)
+                client_socket.close()
 
 def ask_for_key():
     """Función para preguntar por la clave de mantenimiento"""
