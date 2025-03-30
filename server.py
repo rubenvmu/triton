@@ -14,16 +14,17 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 import sys
 import json
+import socket
 
-
-MODBUS_PORT = 14502  
+# ============== CONFIGURACIÓN DEL SISTEMA ==============
+MODBUS_PORT = 502  # Puerto modificado a 14502
 FLAG = "flag{tr1c0n1x_0v3rr1d3_2023}"
 MAINTENANCE_KEY = b"TRICONEX-MAINT-SCH-34-Sx0!pqB.rT"  # Clave AES-256 (32 bytes)
-SESSION_TIMEOUT = 300  
+SESSION_TIMEOUT = 300  # 5 minutos de inactividad
 
 class SafetySystem:
     def __init__(self):
-        """"""
+        """Sistema de seguridad industrial con triple redundancia"""
         self.holding_regs = [0] * 200
         self.coils = [False] * 200
         self.input_regs = [random.randint(0, 9999) for _ in range(200)]
@@ -34,17 +35,17 @@ class SafetySystem:
         self.last_maintenance = datetime.now()
 
     def _initialize_system(self):
-        """"""
-        self.holding_regs[0] = 0x900D  
-        self.holding_regs[1] = 0x0001  
-        self.holding_regs[2] = 0xCAFE  
+        """Configuración inicial del sistema"""
+        self.holding_regs[0] = 0x900D  # Estado del sistema (OPERATIONAL)
+        self.holding_regs[1] = 0x0001  # Modo operación (NORMAL)
+        self.holding_regs[2] = 0xCAFE  # Checksum de integridad
         
         for i in range(10, 15):
-            self.coils[i] = False  
+            self.coils[i] = False  # Válvulas cerradas por defecto
 
     def log_event(self, event, severity="INFO"):
-        """"""
-        timestamp = datetime.now().strftime("2017-%m-%d %H:%M:%S.%f")[:-3]
+        """Registro de eventos de auditoría"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         log_entry = f"[{timestamp}] [{severity}] {event}"
         self.audit_log.append(log_entry)
         if len(self.audit_log) > 1000:
@@ -52,19 +53,19 @@ class SafetySystem:
 
 class MaintenanceBackdoor:
     def __init__(self, safety_system):
-        """"""
+        """Mecanismo de backdoor oculto estilo Triton"""
         self.safety = safety_system
         self.active_sessions = {}
         self.cipher = AES.new(MAINTENANCE_KEY, AES.MODE_ECB)
         
     def _generate_dynamic_token(self):
-        """"""
+        """Genera token de autenticación dinámico"""
         time_factor = int(time.time() / 300)
         system_salt = self.safety.holding_regs[2]
         return hashlib.sha256(f"{time_factor}{system_salt}".encode()).hexdigest()[:8]
         
     def authenticate(self, client_id, encrypted_response):
-        """"""
+        """Autenticación en dos factores"""
         try:
             decrypted = unpad(self.cipher.decrypt(encrypted_response), AES.block_size).decode()
             token, timestamp = decrypted.split("|")
@@ -85,7 +86,7 @@ class MaintenanceBackdoor:
         return None
 
     def execute_command(self, client_id, encrypted_command):
-        """"""
+        """Ejecuta comando privilegiado"""
         if client_id not in self.active_sessions:
             return None
             
@@ -115,7 +116,7 @@ class MaintenanceBackdoor:
 
 class TriconexServer:
     def __init__(self):
-        """"""
+        """Servidor Modbus industrial con backdoor oculto"""
         self.safety = SafetySystem()
         self.backdoor = MaintenanceBackdoor(self.safety)
         
@@ -129,8 +130,8 @@ class TriconexServer:
         return ModbusServerContext(slaves=store, single=True)
 
     def start(self):
-        """"""
-        print("\n=== Triconix Safety Instrumented System v4.7 ===")
+        """Inicia el servidor con el lore completo"""
+        print("\n=== Triconex Safety Instrumented System v4.7 ===")
         print("Copyright (c) 2017 Schneidus Electrics")
         print("Sistema de Protección de Procesos Críticos")
         print("==============================================")
@@ -149,14 +150,26 @@ class TriconexServer:
             address=("0.0.0.0", MODBUS_PORT),
             allow_reuse_address=True)
 
+def ask_for_key():
+    """Función para preguntar por la clave de mantenimiento"""
+    while True:
+        key = input("Por favor, introduce la clave de mantenimiento: ")
+        if key.encode() == MAINTENANCE_KEY:
+            print("Clave correcta. Procediendo con la autenticación...")
+            return True
+        else:
+            print("Clave incorrecta. Intenta de nuevo.")
+
 if __name__ == "__main__":
-    server = TriconexServer()
-    try:
-        server.start()
-    except KeyboardInterrupt:
-        print("\n[!] Secuencia de apagado iniciada...")
-        print("[!] Guardando registros de auditoría...")
-        sys.exit(0)
-    except Exception as e:
-        print(f"[CRITICAL] Error fatal: {str(e)}")
-        sys.exit(1)
+    # Preguntar por la clave antes de iniciar el servidor
+    if ask_for_key():
+        server = TriconexServer()
+        try:
+            server.start()
+        except KeyboardInterrupt:
+            print("\n[!] Secuencia de apagado iniciada...")
+            print("[!] Guardando registros de auditoría...")
+            sys.exit(0)
+        except Exception as e:
+            print(f"[CRITICAL] Error fatal: {str(e)}")
+            sys.exit(1)
