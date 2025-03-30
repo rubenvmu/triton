@@ -17,10 +17,10 @@ import json
 import socket
 
 # ============== CONFIGURACIÓN DEL SISTEMA ==============
-MODBUS_PORT = 15502  # Puerto modificado a 14502
+MODBUS_PORT = 502  
 FLAG = "flag{tr1c0n1x_0v3rr1d3_2023}"
-MAINTENANCE_KEY = b"TRICONEX-MAINT-SCH-34-Sx0!pqB.rT"  # Clave AES-256 (32 bytes)
-SESSION_TIMEOUT = 300  # 5 minutos de inactividad
+MAINTENANCE_KEY = b"TRICONEX-MAINT-SCH-34-Sx0!pqB.rT" 
+SESSION_TIMEOUT = 300  
 
 class SafetySystem:
     def __init__(self):
@@ -87,12 +87,14 @@ class MaintenanceBackdoor:
     def execute_command(self, client_socket, session_key):
         """Ejecuta comando privilegiado"""
         try:
-            
             encrypted_command = client_socket.recv(1024)
+            if not encrypted_command:
+                return False  # Sin datos => terminar
+
             cipher = AES.new(session_key, AES.MODE_ECB)
             command = unpad(cipher.decrypt(encrypted_command), AES.block_size).decode()
             print(f"[DEBUG] Comando recibido: {command}") 
-            
+
             if command == "DISABLE_SAFETY":
                 if "PRIMARY" in self.safety.redundancy:
                     self.safety.redundancy.remove("PRIMARY")
@@ -102,7 +104,7 @@ class MaintenanceBackdoor:
                     client_socket.sendall(b"No hay redundancia para deshabilitar.")
             elif command == "GET_FLAG":
                 if len(self.safety.redundancy) < 3:
-                    print("[DEBUG] Enviando la flag al cliente.") 
+                    print("[DEBUG] Enviando la flag al cliente.")
                     client_socket.sendall(FLAG.encode())
                 else:
                     client_socket.sendall(b"Redundancia activa. No se puede obtener la flag.")
@@ -112,7 +114,8 @@ class MaintenanceBackdoor:
             self.safety.log_event(f"Error en comando: {str(e)}", "ERROR")
             client_socket.sendall(b"Error al procesar el comando.")
         finally:
-            print("[DEBUG] Comando procesado.") 
+            print("[DEBUG] Comando procesado.")
+        return True
 
 class TriconexServer:
     def __init__(self):
@@ -148,7 +151,13 @@ class TriconexServer:
                 print(f"[+] Conexión aceptada de {addr}")
                 session_key = self.backdoor.authenticate(client_socket)
                 if session_key:
-                    self.backdoor.execute_command(client_socket, session_key)
+                    # Bucle para varios comandos
+                    while True:
+                        try:
+                            if not self.backdoor.execute_command(client_socket, session_key):
+                                break
+                        except:
+                            break
                 client_socket.close()
 
 def ask_for_key():
